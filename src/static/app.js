@@ -10,44 +10,67 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await fetch("/activities");
       const activities = await response.json();
 
-      // Clear loading message
-      activitiesList.innerHTML = "";
-
-      // Populate activities list
-      Object.entries(activities).forEach(([name, details]) => {
-        const activityCard = document.createElement("div");
-        activityCard.className = "activity-card";
-
-        const spotsLeft = details.max_participants - details.participants.length;
-
-        // Create participants list HTML
-        const participantsList = details.participants.length > 0 
-          ? `<ul class="participants-list">${details.participants.map(participant => `<li>${participant}</li>`).join('')}</ul>`
-          : `<p class="no-participants">No participants yet</p>`;
-
-        activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-          <div class="participants-section">
-            <p><strong>Current Participants:</strong></p>
-            ${participantsList}
-          </div>
-        `;
-
-        activitiesList.appendChild(activityCard);
-
-        // Add option to select dropdown
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name;
-        activitySelect.appendChild(option);
-      });
+      // Update activities display
+      updateActivitiesDisplay(activities);
+      
+      return activities;
     } catch (error) {
       activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
       console.error("Error fetching activities:", error);
     }
+  }
+
+  // Function to update the activities display without affecting dropdown
+  function updateActivitiesDisplay(activities) {
+    // Clear loading message
+    activitiesList.innerHTML = "";
+
+    // Populate activities list
+    Object.entries(activities).forEach(([name, details]) => {
+      const activityCard = document.createElement("div");
+      activityCard.className = "activity-card";
+
+      const spotsLeft = details.max_participants - details.participants.length;
+
+      // Create participants list HTML
+      const participantsList = details.participants.length > 0 
+        ? `<ul class="participants-list">${details.participants.map(participant => 
+            `<li class="participant-item">
+              <span class="participant-email">${participant}</span>
+              <button class="delete-btn" onclick="unregisterParticipant('${name}', '${participant}')" title="Remove participant">
+                ❌
+              </button>
+            </li>`
+          ).join('')}</ul>`
+        : `<p class="no-participants">No participants yet</p>`;
+
+      activityCard.innerHTML = `
+        <h4>${name}</h4>
+        <p>${details.description}</p>
+        <p><strong>Schedule:</strong> ${details.schedule}</p>
+        <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+        <div class="participants-section">
+          <p><strong>Current Participants:</strong></p>
+          ${participantsList}
+        </div>
+      `;
+
+      activitiesList.appendChild(activityCard);
+    });
+  }
+
+  // Function to populate dropdown (only called once on initial load)
+  function populateActivityDropdown(activities) {
+    // Clear existing options except the default one
+    activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
+    
+    // Add options to select dropdown
+    Object.keys(activities).forEach(name => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      activitySelect.appendChild(option);
+    });
   }
 
   // Handle form submission
@@ -71,6 +94,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh only the activities display to show updated participant list
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
@@ -90,6 +115,53 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Global function to unregister a participant
+  window.unregisterParticipant = async (activityName, email) => {
+    if (!confirm(`Are you sure you want to remove ${email} from ${activityName}?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activityName)}/unregister?email=${encodeURIComponent(email)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        messageDiv.textContent = result.message;
+        messageDiv.className = "success";
+        // Refresh only the activities display to show updated participant list
+        fetchActivities();
+      } else {
+        messageDiv.textContent = result.detail || "Failed to remove participant";
+        messageDiv.className = "error";
+      }
+
+      messageDiv.classList.remove("hidden");
+
+      // Hide message after 5 seconds
+      setTimeout(() => {
+        messageDiv.classList.add("hidden");
+      }, 5000);
+    } catch (error) {
+      messageDiv.textContent = "Failed to remove participant. Please try again.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      console.error("Error removing participant:", error);
+    }
+  };
+
   // Initialize app
-  fetchActivities();
+  async function initializeApp() {
+    const activities = await fetchActivities();
+    if (activities) {
+      populateActivityDropdown(activities);
+    }
+  }
+  
+  initializeApp();
 });
